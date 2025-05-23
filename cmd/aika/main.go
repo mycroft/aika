@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -12,12 +13,38 @@ import (
 	"github.com/mycroft/aika/internal/openai"
 )
 
+func GetTreeContent() ([]byte, error) {
+	cmd := exec.Command("git", "ls-files")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	files := bytes.Split(output, []byte("\n"))
+	var content []byte
+
+	for _, file := range files {
+		if len(file) == 0 {
+			continue
+		}
+		cmd := exec.Command("git", "show", string(file))
+		fileContent, err := cmd.Output()
+		if err != nil {
+			return nil, err
+		}
+		content = append(content, fileContent...)
+	}
+
+	return content, nil
+}
+
 func main() {
 	aiKind := flag.String("ai", "mistral", "AI provider: openai, mistral, or anthropic")
 	modelName := flag.String("model", "", "Model name (default depends on provider)")
 	stream := flag.Bool("stream", false, "Stream response")
 	diff := flag.Bool("diff", false, "Use 'git diff' as input")
 	diffCached := flag.Bool("diff-cached", false, "Use 'git diff --cached' as input")
+	tree := flag.Bool("tree", false, "Use the whole current tree as input")
 	feature := flag.String("feature", "", "Feature name to use: code-review, commit-message, or readme")
 
 	flag.Parse()
@@ -58,6 +85,13 @@ func main() {
 	} else if *diffCached {
 		cmd := exec.Command("git", "diff", "--cached")
 		input, err = cmd.Output()
+	} else if *tree {
+		content, err := GetTreeContent()
+		if err != nil {
+			fmt.Println("Error getting tree content:", err)
+			return
+		}
+		input = content
 	} else {
 		input, err = io.ReadAll(os.Stdin)
 	}
